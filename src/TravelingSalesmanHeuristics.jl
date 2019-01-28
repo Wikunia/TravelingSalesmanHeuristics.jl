@@ -105,7 +105,8 @@ function nearest_neighbor(distmat::AbstractMatrix{T} where {T<:Real};
 						  firstcity::Union{Int, Nothing} = rand(1:size(distmat, 1)),
 						  repetitive::Bool = false,
 						  closepath::Bool = true,
-						  do2opt::Bool = true)
+						  do2opt::Bool = true,
+						  sym::Bool=false)
 	# must have a square matrix 
 	num_cities = check_square(distmat, "Must pass a square distance matrix to nearest_neighbor")
 	
@@ -152,7 +153,10 @@ function nearest_neighbor(distmat::AbstractMatrix{T} where {T<:Real};
 	end
 	
 	# do swaps?
-	if do2opt
+	if do2opt && sym
+		path, _ = two_opt_sym(distmat, path)
+	end
+	if do2opt && !sym
 		path, _ = two_opt(distmat, path)
 	end
 	
@@ -349,6 +353,7 @@ function two_opt(distmat::AbstractMatrix{T}, path::AbstractVector{S}) where {T<:
 	switchHigh = n - 1
 	prevCost = Inf
 	curCost = pathcost(distmat, path)
+	reverses = 0
 	while prevCost > pathcost(distmat, path)
 		prevCost = curCost
 		# we can't change the first 
@@ -358,10 +363,51 @@ function two_opt(distmat::AbstractMatrix{T}, path::AbstractVector{S}) where {T<:
 				if altCost < curCost
 					curCost = altCost
 					reverse!(path, i, j)
+					reverses += 1
 				end
 			end
 		end
 	end
+	println("Reverses: ", reverses)
+	return path, pathcost(distmat, path)
+end
+
+function two_opt_sym(distmat::AbstractMatrix{T}, path::AbstractVector{S}) where {T<:Real, S<:Integer}
+	# size checks
+	n = length(path)
+	if size(distmat, 1) != size(distmat, 2)
+		error("Distance matrix passed to two_opt must be square.")
+	end
+	
+	# don't modify input
+	path = copy(path) # Int is a bitstype
+	
+	# main loop
+	# check every possible switch until no 2-swaps reduce objective
+	# if the path passed in is a loop (first/last nodes are the same)
+	# then we must keep these the endpoints of the path the same
+	# ie just keep it a loop, and therefore it doesn't matter which node is at the end
+	# if the path is not a cycle, we should respect the endpoints
+	switchLow = 2
+	switchHigh = n - 1
+	reverses = 0
+	improved = true
+	while improved
+		improved = false
+		# we can't change the first 
+		for i in switchLow:(switchHigh-1)
+			for j in switchHigh:-1:(i+1)
+				altCost = pathcost_two_opt_rev(distmat, path, i, j)
+				oldCost = pathcost_two_opt(distmat, path, i, j)
+				if altCost < oldCost
+					reverse!(path, i, j)
+					reverses += 1
+					improved = true
+				end
+			end
+		end
+	end
+	println("Reverses 1: ", reverses)
 	return path, pathcost(distmat, path)
 end
 
